@@ -1,6 +1,14 @@
 {
     "AWSTemplateFormatVersion": "2010-09-09",
     "Description": "Lambda Custom Runtime",
+    "Mappings": {
+        "UserConfig": {
+            "Login": {
+                "Name": "student",
+                "Pass": "password"
+            }
+        }
+    }
     "Resources": {
         "LambdaExecutionRole": {
             "Type": "AWS::IAM::Role",
