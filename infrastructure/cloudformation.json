@@ -1,0 +1,299 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Lambda Custom Runtime",
+    "Resources": {
+        "LambdaExecutionRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": "LambdaExecutionRole",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "root",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:*"
+                                    ],
+                                    "Resource": "arn:aws:logs:*:*:*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:*"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ec2:CreateSnapshot",
+                                        "ec2:DescribeSnapshots"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "CustomRuntimeLab": {
+            "Type": "AWS::S3::Bucket",
+            "Properties": {
+                "AccessControl": "PublicRead"
+            }
+        },
+        "S3Copy": {
+            "Type": "Custom::CopyToS3",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "CopyFilesToS3",
+                        "Arn"
+                    ]
+                },
+                "S3BucketName": {
+                    "Ref": "CustomRuntimeLab"
+                },
+                "SourceBucket": "clouda-labs-assets",
+                "Objects": [
+                    "bash-lambda-layer/layer.zip"
+                ]
+            }
+        },
+        "CopyFilesToS3": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Handler": "index.lambda_handler",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "LambdaExecutionRole",
+                        "Arn"
+                    ]
+                },
+                "Code": {
+                    "ZipFile": {
+                        "Fn::Join": [
+                            "\n",
+                            [
+                                "",
+                                "import json",
+                                "import boto3",
+                                "import cfnresponse",
+                                "",
+                                "print('Loading function')",
+                                "",
+                                "s3 = boto3.resource('s3')",
+                                "",
+                                "",
+                                "def copy_to_s3(key, source_bucket, bucket):",
+                                "    copy_source = { 'Bucket': source_bucket, 'Key': key }",
+                                "    dest_bucket = s3.Bucket(bucket)",
+                                "    dest_object = dest_bucket.Object(key)",
+                                "    dest_object.copy(copy_source)",
+                                "",
+                                "",
+                                "def lambda_handler(event, context):",
+                                "    print('Received event: ' + json.dumps(event, indent=2))",
+                                "",
+                                "    if event['RequestType'] == 'Create':",
+                                "        # get the properties set in the CloudFormation resource",
+                                "        properties = event['ResourceProperties']",
+                                "        objects = properties['Objects']",
+                                "        bucket = properties['S3BucketName']",
+                                "        source_bucket = properties['SourceBucket']",
+                                "",
+                                "        try:",
+                                "            for key in objects:",
+                                "                copy_to_s3(key, source_bucket, bucket)",
+                                "",
+                                "        except Exception as e:",
+                                "            print(e)",
+                                "            cfnresponse.send(event, context, cfnresponse.FAILED, {",
+                                "                             'Response': 'Failure'})",
+                                "            return",
+                                "",
+                                "    cfnresponse.send(event, context, cfnresponse.SUCCESS, {'Response': 'Success'})",
+                                ""
+                            ]
+                        ]
+                    }
+                },
+                "Runtime": "python3.6",
+                "Timeout": 60
+            }
+        },
+        "CloudaLabEBS": {
+            "Type": "AWS::EC2::Volume",
+            "Properties": {
+                "AvailabilityZone": "us-west-2a",
+                "Size": 1,
+                "VolumeType": "gp2",
+                "Tags": [
+                    {
+                        "Key": "Lab",
+                        "Value": "Lambda Custom Runtime"
+                    }
+                ]
+            }
+        },
+        "Group": {
+            "Type": "AWS::IAM::Group",
+            "Properties": {
+                "GroupName": "Students",
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "students-policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Action": [
+                                        "cloudwatch:Describe*",
+                                        "cloudwatch:Get*",
+                                        "cloudwatch:List*",
+                                        "ec2:Describe*",
+                                        "ec2:GetConsoleOutput",
+                                        "events:DescribeRule",
+                                        "events:ListRuleNamesByTarget",
+                                        "events:ListRules",
+                                        "events:ListTargetsByRule",
+                                        "events:TestEventPattern",
+                                        "logs:Describe*",
+                                        "logs:Get*",
+                                        "logs:TestMetricFilter",
+                                        "s3:Get*",
+                                        "s3:List*",
+                                        "iam:GetRolePolicy",
+                                        "iam:GetRole",
+                                        "tag:getResources",
+                                        "kms:ListAliases",
+                                        "cloudformation:DescribeStackResources"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "lambda:*"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:*"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "iam:ListRolePolicies",
+                                        "iam:ListAttachedRolePolicies"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "iam:PassRole"
+                                    ],
+                                    "Resource": "arn:aws:iam::*:role/LambdaExecutionRole"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "iam:CreateRole",
+                                        "iam:PutRolePolicy"
+                                    ],
+                                    "Resource": "arn:aws:iam::*:role/lambda_basic_execution"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "iam:ListRoles"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:iam::*:role/"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Deny",
+                                    "Action": [
+                                        "iam:*"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:iam::*:user/student",
+                                        "arn:aws:iam::*:group/CloudAcademyStudents"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Deny",
+                                    "Action": [
+                                        "ec2:ModifyInstanceAttribute",
+                                        "ec2:*Reserved*",
+                                        "ec2:*Spot*",
+                                        "dynamodb:*Reserved*",
+                                        "rds:*Reserved*",
+                                        "elasticache:*Reserved*",
+                                        "redshift:*Reserved*",
+                                        "aws-marketplace:*"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "User": {
+            "Type": "AWS::IAM::User",
+            "Properties": {
+                "LoginProfile": {
+                    "Password": {
+                        "Fn::FindInMap": [
+                            "UserConfig",
+                            "Login",
+                            "Pass"
+                        ]
+                    }
+                },
+                "Path": "/",
+                "Groups": [
+                    "Students"
+                ],
+                "UserName": {
+                    "Fn::FindInMap": [
+                        "UserConfig",
+                        "Login",
+                        "Name"
+                    ]
+                }
+            }
+        }
+    }
+}
